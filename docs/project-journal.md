@@ -44,3 +44,10 @@
 - AWS path now has real API/worker Lambda route handling, Cognito JWT authorizer, S3 presign and notification, SQS event source mapping, private UI bucket/OAC CloudFront, and remote-state configuration inputs. AWS remains unexecuted.
 - Second Compose evidence: API-only process returned a pending job; the separate worker claimed it from DynamoDB Local and reached `APPROVED`. After API/worker rebuild/restart, the previously pending job completed and a new synthetic job reached `APPROVED` with 6 persisted audit events. DynamoDB Local now uses a named disk volume and bootstraps `sdi-documents`.
 - Final verification: API `8 passed`; frontend TypeScript and Vite build passed; Lambda contract `2 passed`; Terraform formatting/validation, Compose config, Python compilation, and smoke-script syntax passed. AWS remains unperformed; the protected workflow is the only intended apply path.
+
+## 2026-08-13 — publication checkpoint
+
+- Publication: created public repository `abdalrahmanattya/secure-document-intelligence`, initialized on `main`, and pushed the verified implementation. No AWS deployment or cloud apply was performed.
+- Public-safety review: `AGENTS.md` is ignored via `.git/info/exclude`; generated caches, dependencies, and build output are ignored; no private local paths, recruiter/résumé framing, credential-shaped literals, or private key files were found in the public snapshot. `gitleaks` was unavailable, so the final scan used bounded regex/manual checks.
+- Hosted CI: run `31727485998` passed API tests plus Trivy filesystem scan, Terraform validation, Lambda contract tests, and Terraform contract tests. The CI workflow uses `PYTHONPATH=.` for the API test job and resolvable Trivy action tag `v0.36.0`; GitHub emitted only non-blocking Node 20 deprecation notices for third-party action runtimes.
+- Resume point: repository is public and clean on `main`; AWS remains unexecuted and requires the protected on-demand workflow plus account-level review.
