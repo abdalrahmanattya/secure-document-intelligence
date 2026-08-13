@@ -1,0 +1,78 @@
+name: AWS on-demand
+on:
+  workflow_dispatch:
+    inputs:
+      action: {description: 'plan, apply, smoke, or destroy', required: true, type: choice, options: [plan, apply, smoke, destroy]}
+      confirmation: {description: 'Type PLAN, APPLY, SMOKE, or DESTROY to confirm the selected action', required: true, type: string}
+permissions:
+  id-token: write
+  contents: read
+jobs:
+  deploy:
+    environment: secure-document-intelligence-aws
+    runs-on: ubuntu-latest
+    concurrency: secure-document-intelligence-aws
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with: {role-to-assume: '${{ vars.AWS_ROLE_ARN }}', aws-region: '${{ vars.AWS_REGION }}'}
+      - uses: hashicorp/setup-terraform@v3
+      - name: Validate typed confirmation
+        env: {ACTION: '${{ inputs.action }}', CONFIRMATION: '${{ inputs.confirmation }}'}
+        run: |
+          expected=$(printf '%s' "$ACTION" | tr '[:lower:]' '[:upper:]')
+          actual=$(printf '%s' "$CONFIRMATION" | tr '[:lower:]' '[:upper:]')
+          test "$actual" = "$expected" || { echo "confirmation must be $expected" >&2; exit 2; }
+      - name: Terraform action
+        working-directory: infra/aws
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=${{ vars.AWS_TF_STATE_BUCKET }}" \
+            -backend-config="key=${{ vars.AWS_TF_STATE_KEY }}" \
+            -backend-config="region=${{ vars.AWS_REGION }}" \
+            -backend-config="dynamodb_table=${{ vars.AWS_TF_LOCK_TABLE }}" \
+            -backend-config="encrypt=true"
+          case "${{ inputs.action }}" in
+            plan) terraform plan -input=false ;;
+            apply) terraform apply -input=false -auto-approve; callback="https://$(terraform output -raw cloudfront_domain_name)/"; terraform apply -input=false -auto-approve -var="ui_callback_url=${callback}" ;;
+            smoke) terraform output -raw api_url >/dev/null ;;
+            destroy) terraform destroy -input=false -auto-approve ;;
+          esac
+      - if: ${{ inputs.action == 'apply' }}
+        name: Build and upload private UI
+        working-directory: frontend
+        run: |
+          npm ci --no-audit --no-fund
+          export VITE_AUTH_MODE=pkce
+          export VITE_API_URL=
+          export VITE_COGNITO_DOMAIN="$(terraform -chdir=../infra/aws output -raw cognito_domain)"
+          export VITE_COGNITO_CLIENT_ID="$(terraform -chdir=../infra/aws output -raw cognito_client_id)"
+          npm run build
+          bucket=$(terraform -chdir=../infra/aws output -raw ui_bucket)
+          aws s3 sync dist/ "s3://${bucket}/" --delete
+          distribution=$(terraform -chdir=../infra/aws output -raw cloudfront_distribution_id)
+          aws cloudfront create-invalidation --distribution-id "$distribution" --paths '/*'
+      - if: ${{ inputs.action == 'apply' || inputs.action == 'smoke' }}
+        id: outputs
+        working-directory: infra/aws
+        run: |
+          echo "api_url=$(terraform output -raw api_url)" >> "$GITHUB_OUTPUT"
+          echo "user_pool_id=$(terraform output -raw user_pool_id)" >> "$GITHUB_OUTPUT"
+      - if: ${{ inputs.action == 'smoke' }}
+        env:
+          AWS_SMOKE_URL: ${{ steps.outputs.outputs.api_url }}
+          AWS_SMOKE_ID_TOKEN: ${{ secrets.AWS_SMOKE_ID_TOKEN }}
+        run: ./scripts/aws-smoke.sh
+      - if: ${{ inputs.action == 'smoke' }}
+        name: Upload sanitized smoke evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: secure-document-intelligence-smoke-evidence
+          path: ${{ runner.temp }}/secure-document-intelligence-smoke-*.json
+          if-no-files-found: error
+      - if: ${{ inputs.action == 'destroy' }}
+        name: Verify destroyed state
+        working-directory: infra/aws
+        run: |
+          test -z "$(terraform state list)"
+          ! terraform output -json >/dev/null 2>&1

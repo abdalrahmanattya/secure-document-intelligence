@@ -1,0 +1,5 @@
+# Development
+
+The API is intentionally adapter-oriented. `DocumentStore` persists JSON state when `STATE_PATH` is set; Compose selects DynamoDB Local for durable documents, audit, idempotency, and jobs; `BotoObjectStore` writes quarantine/clean objects to MinIO or S3; `ClamAVScanner` uses the INSTREAM protocol; `LocalTextExtractor` invokes `pdftotext` or Tesseract; and `OllamaExtractor` requires an explicit `MODEL_ADAPTER=ollama` setting. Fixture adapters are selected explicitly by `ADAPTER_MODE=fixture` and are used by tests. The browser computes a required SHA-256 digest, and both local PUT and AWS presigned POST paths verify it again at the worker boundary. The queue contract mirrors SQS visibility, retries, and a DLQ. Never send raw document text to an LLM without redaction, size bounds, schema validation, and prompt-injection handling.
+
+Pull requests run Python tests, UI type checking, Terraform formatting/validation, secret scanning, and container scanning against synthetic fixtures. Cloud workflows require a protected environment and are manually dispatched. They must capture sanitized evidence and destroy temporary resources.

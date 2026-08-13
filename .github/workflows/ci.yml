@@ -1,0 +1,40 @@
+name: CI
+on: [push, pull_request]
+permissions: {contents: read}
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults: {run: {working-directory: api}}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install -r requirements.txt
+      - run: pytest -q
+      - uses: aquasecurity/trivy-action@0.28.0
+        with: {scan-type: fs, scan-ref: '.', format: table, ignore-unfixed: true}
+  terraform:
+    runs-on: ubuntu-latest
+    defaults: {run: {working-directory: infra/aws}}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - run: terraform fmt -check
+      - run: terraform init -backend=false
+      - run: terraform validate
+  lambda-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install pytest boto3
+      - run: pytest -q infra/aws/lambda/test_handler_contract.py
+  terraform-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install pytest
+      - run: pytest -q infra/aws/test_terraform_contract.py

@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.env
+.terraform/
+*.tfstate*
+node_modules/
+dist/
+*.zip
+*.tsbuildinfo
+.DS_Store
