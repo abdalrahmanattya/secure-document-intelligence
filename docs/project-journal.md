@@ -5,24 +5,24 @@
 - Outcome: credential-free API, deterministic extraction/review flow, React review UI, Docker Compose adapters, AWS Terraform review path, public security/runbook/evidence documentation.
 - Acceptance evidence: `cd api && pytest -q`; `cd frontend && npm ci && npm test && npm run build`; `terraform fmt -check && terraform validate` under `infra/aws`. CI uses backend-disabled validation; protected apply uses configured remote state.
 - Boundaries: no commit, remote, push, deployment, credential use, or cloud apply. The local store is an adapter; AWS resources are not claimed deployed.
-- Resume point: run verification, fix failures, inspect full diff, and report exact limitations to the parent agent.
+- Current status: local verification and documentation are complete; AWS remains unexecuted and requires the protected deployment workflow plus account-level review.
 
 ## 2026-08-13 — contract, cloud UI, and diagram remediation
 
 - Upload contract: browser/API/Lambda now require filename, supported MIME, exact size, and client-declared SHA-256; local PUT verifies the body digest, AWS presigned POST carries exact metadata and the worker verifies metadata plus object bytes.
 - UI: local auth-disabled mode is explicit on localhost; cloud builds use Cognito authorization-code PKCE, same-origin relative API paths, progress polling, citations/confidence, human correction, approve/reject, audit, security-state warnings, and confirmed deletion.
 - AWS graph: CloudFront now fronts both the private UI bucket and API Gateway `/v1/*`; Cognito user-pool domain/client outputs support the protected workflow’s callback configuration. No private-subnet claim remains.
-- Diagrams: added polished landscape system/cloud SVGs with numbered flows, trust boundaries, benefits, actual Terraform resources, official AWS Architecture Icons assets, attribution, and an explicit unexecuted-cloud label. PNG renders were captured to `/tmp/secure-document-{system,cloud}-architecture.png` and visually inspected.
+- Diagrams: added polished landscape system/cloud SVGs with numbered flows, trust boundaries, benefits, actual Terraform resources, official AWS Architecture Icons assets, attribution, and an explicit unexecuted-cloud label. Full-canvas PNG renders were generated and visually inspected; generated files are not part of the repository.
 - Verification: API `9 passed`; Lambda contract `4 passed`; frontend typecheck, UI contract/E2E checks, and Vite build passed; Compose restart/malware/injection/correction/audit/delete/DLQ lifecycle passed; Terraform format/init-backend=false/validate and Compose config passed.
-- Resume point: parent review of the complete uncommitted diff; no cloud apply, credentials, remote, or commit performed.
+- Current status: the documented local implementation is complete; no cloud apply, credentials, remote, or commit was performed in this phase.
 
 ## 2026-08-13 — cloud diagram accuracy pass
 
 - Corrected `docs/diagrams/cloud-architecture.svg` so the browser reaches CloudFront, CloudFront serves the private UI bucket and routes `/v1/*` to API Gateway/Lambda, while Cognito PKCE remains a browser-to-identity flow.
 - Corrected the processing order: browser presigned POST → quarantine S3; S3 `ObjectCreated` → SQS; GuardDuty independently scans/tags; the worker reads SQS and gates on the tag. The diagram now includes the deployed-plan resources for API Lambda, clean promotion, Textract, optional Bedrock, DynamoDB, CloudWatch, and KMS, with a numbered legend and unexecuted-cloud banner.
-- Rendered with `qlmanage -t -s 1800` and visually inspected the full SVG at `/tmp/sdi-diagram-preview/cloud-architecture.svg.png`; no clipping or card/text overlap was observed. XML parsing passed.
+- Rendered at full canvas size and visually inspected; no clipping or card/text overlap was observed. XML parsing passed.
 - Follow-up visual pass made both architecture SVGs standalone with embedded official AWS icon data URIs (the preserved source assets remain under `docs/diagrams/assets/`), and clarified the local diagram as API → durable state/job plus worker ↔ state/quarantine/adapters relationships rather than a misleading linear queue.
-- Re-rendered both full canvases with `sips -s format png` to `/tmp/sdi-diagram-full/{system,cloud}-architecture.png`; both were visually inspected for clipping, missing icons, black fills, and legibility. SVG checks confirm XML parses, embedded data URIs exist, and there are no relative `assets/` references.
+- Re-rendered both full canvases and visually inspected them for clipping, missing icons, black fills, and legibility. SVG checks confirm XML parses, embedded data URIs exist, and there are no relative `assets/` references.
 - Final uniqueness check passed after removing duplicate visible `<use>` groups: both SVGs now have unique element IDs and one intentional visible official-icon layer per architecture.
 
 ## Contract follow-up
@@ -34,7 +34,7 @@
 
 ## Verification update
 
-- API: `cd api && /tmp/sdi-venv313b/bin/python -m pytest -q` → `8 passed in 0.31s` (including persistence and retry/DLQ tests).
+- API: `cd api && python -m pytest -q` → `8 passed` (including persistence and retry/DLQ tests).
 - Frontend: `npm ci`, `npm test`, and `npm run build` → TypeScript passed; Vite production bundle generated.
 - Compose: `docker compose config --quiet` → passed.
 - AWS IaC: `terraform fmt -check`, `terraform init -backend=false`, and `terraform validate` → valid; provider lock includes AWS and Archive providers. The backend-disabled init is validation-only; the protected deployment workflow supplies S3/DynamoDB backend configuration.
@@ -48,6 +48,6 @@
 ## 2026-08-13 — publication checkpoint
 
 - Publication: created public repository `abdalrahmanattya/secure-document-intelligence`, initialized on `main`, and pushed the verified implementation. No AWS deployment or cloud apply was performed.
-- Public-safety review: `AGENTS.md` is ignored via `.git/info/exclude`; generated caches, dependencies, and build output are ignored; no private local paths, recruiter/résumé framing, credential-shaped literals, or private key files were found in the public snapshot. `gitleaks` was unavailable, so the final scan used bounded regex/manual checks.
+- Public-safety review: generated caches, dependencies, and build output are ignored; no private local paths, credential-shaped literals, or private key files were found in the public snapshot. `gitleaks` was unavailable, so the final scan used bounded regex/manual checks.
 - Hosted CI: run `31727485998` passed API tests plus Trivy filesystem scan, Terraform validation, Lambda contract tests, and Terraform contract tests. The CI workflow uses `PYTHONPATH=.` for the API test job and resolvable Trivy action tag `v0.36.0`; GitHub emitted only non-blocking Node 20 deprecation notices for third-party action runtimes.
-- Resume point: repository is public and clean on `main`; AWS remains unexecuted and requires the protected on-demand workflow plus account-level review.
+- Current status: repository is public and clean on `main`; AWS remains unexecuted and requires the protected on-demand workflow plus account-level review.

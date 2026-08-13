@@ -81,11 +81,11 @@ terraform -chdir=infra/aws validate
 docker compose config --quiet
 ```
 
-The Compose acceptance path exercises restart persistence, cited extraction, malware rejection, prompt-injection review, correction, audit, deletion, and queue retry/DLQ behavior. See [the evidence matrix](docs/evidence-matrix.md) and [the project journal](docs/project-journal.md).
+The Compose acceptance path validates restart persistence, cited extraction, malware rejection, prompt-injection review, correction, audit, deletion, and queue retry/DLQ behavior. See [the evidence matrix](docs/evidence-matrix.md) and [the project journal](docs/project-journal.md).
 
 ## Cloud path
 
-`infra/aws` provisions a private UI S3 bucket behind enabled CloudFront OAC, a CloudFront API origin for same-origin `/v1/*` routes, Cognito PKCE configuration, API Gateway JWT authorization, Lambda API/worker, S3 quarantine/clean buckets, GuardDuty Malware Protection tagging, SQS/DLQ, DynamoDB, KMS, Textract, Bedrock, and CloudWatch. The quarantine S3 notification is the sole AWS enqueue source; `/process` is an idempotent acknowledgement. The protected OIDC workflow uses durable remote state, typed action confirmation, output-derived URLs, a synthetic smoke test with a short-lived Cognito ID token, sanitized evidence, and destroy verification. It fails closed unless the workflow’s protected environment and token are supplied.
+`infra/aws` provisions a private UI S3 bucket behind enabled CloudFront OAC, a CloudFront API origin for same-origin `/v1/*` routes, Cognito PKCE configuration, API Gateway JWT authorization, Lambda API/worker, S3 quarantine/clean buckets, GuardDuty Malware Protection tagging, SQS/DLQ, DynamoDB, KMS, Textract, Bedrock, and CloudWatch. The quarantine S3 notification is the sole AWS enqueue source; `/process` is an idempotent acknowledgement. The protected OIDC workflow uses durable remote state, typed action confirmation, output-derived URLs, a synthetic smoke test with a short-lived Cognito ID token, sanitized evidence, and destroy verification. Follow [`docs/runbooks/deploy.md`](docs/runbooks/deploy.md) and dispatch the workflow with one typed action (`PLAN`, `APPLY`, `SMOKE`, or `DESTROY`); it fails closed unless the workflow’s protected environment and token are supplied. AWS has not been applied, smoke-tested, or destroyed for this repository state.
 
 ## Security and limitations
 
