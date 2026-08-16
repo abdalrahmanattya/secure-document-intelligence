@@ -24,6 +24,19 @@ def document_or_404(document_id: str, tenant_id: str):
     try: return store.get(document_id, tenant_id)
     except KeyError: raise HTTPException(status_code=404, detail="document not found")
 
+def delete_object_if_present(configured_store, key: str) -> None:
+    if not configured_store:
+        return
+    try:
+        configured_store.delete(key)
+    except Exception as exc:
+        # S3-compatible adapters normally make DELETE absent-key safe, but
+        # tolerate the standard not-found error for alternate implementations.
+        code = str(getattr(exc, "response", {}).get("Error", {}).get("Code", ""))
+        if code in {"404", "NoSuchKey", "NotFound"} or getattr(exc, "status_code", None) == 404:
+            return
+        raise
+
 @app.get("/healthz")
 def healthz(): return {"status": "ok", "service": "secure-document-intelligence", "local_mode": True}
 
@@ -116,4 +129,16 @@ def audit(document_id: str, tenant_id: Annotated[str, Header()] = "demo-tenant")
 
 @app.delete("/v1/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_document(document_id: str, tenant_id: Annotated[str, Header()] = "demo-tenant"):
-    document_or_404(document_id, tenant_id); store.delete(document_id); return Response(status_code=status.HTTP_204_NO_CONTENT)
+    document_or_404(document_id, tenant_id)
+    key = f"{tenant_id}/{document_id}"
+    try:
+        # Remove both representations before deleting metadata. Each backend
+        # must treat an absent object as success so retries remain idempotent.
+        for configured_store in (blob_store, clean_blob_store):
+            delete_object_if_present(configured_store, key)
+    except Exception as exc:
+        # Keep the document and audit trail intact when either object store
+        # cannot be cleaned up; a later request can safely retry the operation.
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="object-store deletion failed") from exc
+    store.delete(document_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

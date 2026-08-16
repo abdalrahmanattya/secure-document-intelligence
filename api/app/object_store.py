@@ -6,6 +6,7 @@ from typing import Protocol
 class ObjectStore(Protocol):
     def put(self, key: str, content: bytes, content_type: str) -> None: ...
     def get(self, key: str) -> bytes: ...
+    def delete(self, key: str) -> None: ...
 
 class BotoObjectStore:
     def __init__(self, bucket: str | None = None) -> None:
@@ -18,6 +19,9 @@ class BotoObjectStore:
             options["ServerSideEncryption"] = "aws:kms"
         self.client.put_object(**options)
     def get(self, key: str) -> bytes: return self.client.get_object(Bucket=self.bucket, Key=key)["Body"].read()
+    def delete(self, key: str) -> None:
+        # S3 delete_object is idempotent for absent keys, including MinIO.
+        self.client.delete_object(Bucket=self.bucket, Key=key)
 
 def object_store(bucket: str | None = None) -> ObjectStore | None:
     return BotoObjectStore(bucket) if os.getenv("OBJECT_STORE_ENDPOINT") else None
