@@ -5,11 +5,16 @@ from fastapi.testclient import TestClient
 from app.main import app, store
 from app.domain import DocumentStore, UploadRequest
 from app.queue import JobQueue
+from app import main as main_module
 
 client = TestClient(app)
+_original_blob_store = main_module.blob_store
+_original_clean_blob_store = main_module.clean_blob_store
 
 def setup_function():
     store._documents.clear(); store._audit.clear(); store._idempotency.clear()
+    main_module.blob_store = _original_blob_store
+    main_module.clean_blob_store = _original_clean_blob_store
 
 def create(content: bytes, name="invoice.txt", content_type="text/plain", tenant="demo-tenant"):
     response = client.post("/v1/uploads", json={"filename": name, "content_type": content_type, "size": len(content), "sha256": hashlib.sha256(content).hexdigest(), "tenant_id": tenant}, headers={"Idempotency-Key": "test-" + name})
@@ -66,7 +71,73 @@ def test_review_correction_and_delete_retention_state():
     review = client.post(f"/v1/documents/{document_id}/reviews", json={"reviewer": "alex", "decision": "APPROVED", "corrections": {"document_type": "invoice"}})
     assert review.json()["state"] == "APPROVED"
     assert client.delete(f"/v1/documents/{document_id}").status_code == 204
-    assert client.get(f"/v1/documents/{document_id}").json()["state"] == "EXPIRED"
+    assert client.get(f"/v1/documents/{document_id}").status_code == 404
+
+
+class FakeObjectStore:
+    def __init__(self, missing: bool = False, failure: Exception | None = None):
+        self.keys: list[str] = []
+        self.missing = missing
+        self.failure = failure
+
+    def put(self, key: str, content: bytes, content_type: str) -> None:
+        return None
+
+    def delete(self, key: str) -> None:
+        if self.failure:
+            raise self.failure
+        if not self.missing:
+            self.keys.append(key)
+
+
+def test_delete_cleans_quarantine_and_clean_stores_with_tenant_key():
+    quarantine = FakeObjectStore()
+    clean = FakeObjectStore()
+    document_id = create(b"delete me", tenant="tenant-a")
+    main_module.blob_store, main_module.clean_blob_store = quarantine, clean
+
+    response = client.delete(f"/v1/documents/{document_id}", headers={"tenant-id": "tenant-a"})
+
+    assert response.status_code == 204
+    assert quarantine.keys == [f"tenant-a/{document_id}"]
+    assert clean.keys == [f"tenant-a/{document_id}"]
+    assert client.get(f"/v1/documents/{document_id}", headers={"tenant-id": "tenant-a"}).status_code == 404
+
+
+def test_delete_succeeds_when_object_stores_are_absent_or_keys_missing():
+    document_id = create(b"delete me")
+    main_module.blob_store = None
+    main_module.clean_blob_store = FakeObjectStore(missing=True)
+    assert client.delete(f"/v1/documents/{document_id}").status_code == 204
+
+
+def test_delete_failure_retains_metadata_and_retry_is_safe():
+    failing = FakeObjectStore(failure=RuntimeError("store unavailable"))
+    document_id = create(b"retry me", tenant="tenant-a")
+    main_module.blob_store, main_module.clean_blob_store = failing, FakeObjectStore()
+
+    failed = client.delete(f"/v1/documents/{document_id}", headers={"tenant-id": "tenant-a"})
+    assert failed.status_code == 502
+    assert client.get(f"/v1/documents/{document_id}", headers={"tenant-id": "tenant-a"}).status_code == 200
+
+    successful = FakeObjectStore()
+    main_module.blob_store, main_module.clean_blob_store = successful, FakeObjectStore()
+    assert client.delete(f"/v1/documents/{document_id}", headers={"tenant-id": "tenant-a"}).status_code == 204
+    assert successful.keys == [f"tenant-a/{document_id}"]
+    assert client.delete(f"/v1/documents/{document_id}", headers={"tenant-id": "tenant-a"}).status_code == 404
+
+
+def test_delete_failure_in_clean_store_retains_metadata_after_quarantine_cleanup():
+    document_id = create(b"clean retry", tenant="tenant-a")
+    quarantine = FakeObjectStore()
+    clean_failure = FakeObjectStore(failure=RuntimeError("clean store unavailable"))
+    main_module.blob_store, main_module.clean_blob_store = quarantine, clean_failure
+
+    response = client.delete(f"/v1/documents/{document_id}", headers={"tenant-id": "tenant-a"})
+
+    assert response.status_code == 502
+    assert quarantine.keys == [f"tenant-a/{document_id}"]
+    assert client.get(f"/v1/documents/{document_id}", headers={"tenant-id": "tenant-a"}).status_code == 200
 
 def test_queue_retries_and_dead_letters_after_bound():
     queue = JobQueue(max_attempts=2); job = queue.enqueue("missing", "demo")

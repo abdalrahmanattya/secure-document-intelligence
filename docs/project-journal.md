@@ -49,5 +49,11 @@
 
 - Publication: created public repository `abdalrahmanattya/secure-document-intelligence`, initialized on `main`, and pushed the verified implementation. No AWS deployment or cloud apply was performed.
 - Public-safety review: generated caches, dependencies, and build output are ignored; no private local paths, credential-shaped literals, or private key files were found in the public snapshot. `gitleaks` was unavailable, so the final scan used bounded regex/manual checks.
-- Hosted CI: run `31727485998` passed API tests plus Trivy filesystem scan, Terraform validation, Lambda contract tests, and Terraform contract tests. The CI workflow uses `PYTHONPATH=.` for the API test job and resolvable Trivy action tag `v0.36.0`; GitHub emitted only non-blocking Node 20 deprecation notices for third-party action runtimes.
+- Hosted CI: authoritative run `31732039186` ran the then-current four-job workflow: API tests with a filesystem Trivy scan in the old test job, Terraform validation, Lambda contract tests, and Terraform contract tests. It is CI evidence only, not AWS deployment evidence; the expanded six-gate workflow awaits its own hosted PR run.
 - Current status: repository is public and clean on `main`; AWS remains unexecuted and requires the protected on-demand workflow plus account-level review.
+
+## 2026-08-16 — public documentation and local UI evidence
+
+- README now separates purpose, capabilities, architecture, local operation, verification evidence, gated deployment, status, limitations, and pre-deployment blockers. It states explicitly that AWS is planned/unexecuted and local/CI evidence is not deployment evidence.
+- Captured and visually inspected `docs/assets/local-ui.png` from the existing built frontend at `http://127.0.0.1:4173/` with installed Chrome headless. The screenshot shows the deterministic `LOCAL · AUTH DISABLED` mode and is labeled in the README.
+- Security guidance now names the protected GitHub environment/OIDC design, and the deployment runbook documents state ownership/encryption, protected inputs, PLAN/APPLY/SMOKE/DESTROY gates, outputs, rollback, and `force_destroy` data-loss risk.

@@ -115,7 +115,7 @@ class DocumentStore:
         with self._lock:
             doc = self._documents.get(document_id)
             if doc:
-                doc.content = None; doc.state = DocumentState.EXPIRED; doc.updated_at = now()
+                self._documents.pop(document_id, None)
                 self._audit.pop(document_id, None)
                 for key, value in list(self._idempotency.items()):
                     if value == document_id: self._idempotency.pop(key, None)
