@@ -1,98 +1,232 @@
+<!-- reader-first-readme:v1 -->
+
 # Secure Document Intelligence
 
-Secure Document Intelligence is a local-first document intake and review service for teams that need traceable automation. It accepts bounded uploads, quarantines untrusted content, screens for malware, extracts fields with confidence and source citations, routes uncertain or instruction-like text to a human, and records tenant-scoped audit events.
+Secure Document Intelligence helps a review team turn uploaded documents into structured, traceable information without silently trusting either the file or an AI-generated answer. It checks each upload, keeps suspicious content isolated, shows where extracted values came from, and sends uncertain results to a person for review.
 
-![Local system architecture](docs/diagrams/system-architecture.svg)
+The central idea is that automation prepares the work, while people retain control over decisions that need judgment.
 
-![AWS target architecture](docs/diagrams/cloud-architecture.svg)
+## The 30-second overview
 
-> **Status:** AWS resources are planned in Terraform and have not been deployed or applied; local and CI evidence is not deployment evidence.
+Imagine an operations team receiving an invoice:
 
-## Purpose and usefulness
+1. A team member selects the file in the review website.
+2. The browser records its exact size and digital fingerprint so the service can detect an altered or incomplete upload.
+3. The service places the file in quarantine and checks it before treating it as safe.
+4. Document fields are extracted together with confidence scores and citations to the source text.
+5. A clear result can move forward; a suspicious instruction or low-confidence result waits for a reviewer.
+6. The reviewer corrects, approves, or rejects the result.
+7. The service records the history, and an authorized user can later delete the document and its related records.
 
-Document automation is only useful when a reviewer can verify the result and explain what happened. This service keeps untrusted bytes and extracted text behind explicit boundaries, requires a browser-declared SHA-256 contract, preserves citations and confidence, and makes review, correction, audit, and deletion observable.
+The repository includes a deterministic local mode, so this complete journey can be demonstrated without sending documents to a cloud service.
 
-It is useful as a reference implementation for document intake, human-in-the-loop review, tenant isolation, and a gated AWS delivery path. The local flow is deterministic and credential-free; the AWS design is an unexecuted target.
+## What people can do
 
-## Capabilities
+These capabilities make document review useful when a team needs both faster extraction and evidence for each decision.
 
-- Browser-computed SHA-256, exact byte count, MIME, and filename validation.
-- Quarantine-first processing with malware and instruction-like-content handling.
-- Deterministic fixture extraction with field confidence and source citations.
-- Human correction, approve/reject decisions, audit history, and tenant-scoped deletion.
-- Durable local adapters for DynamoDB Local, MinIO, scanners, OCR, and optional Ollama.
-- AWS Terraform design for CloudFront, Cognito PKCE, API Gateway JWT authorization, Lambda, S3, SQS/DLQ, DynamoDB, KMS, GuardDuty Malware Protection, Textract, Bedrock, and CloudWatch.
+- Upload text, PDF, PNG, or JPEG documents within defined size limits.
+- See processing state, extracted fields, confidence, and source citations.
+- Correct an extracted value before approving it.
+- Reject unsafe or unsuitable content.
+- Inspect a chronological audit history of important actions.
+- Keep one organization's records separated from another's.
+- Delete a document together with its stored content and related records.
+- Exercise malware, suspicious-instruction, retry, and failed-job paths with safe fixtures.
 
-## Architecture
+## A representative reviewer journey
 
-The local UI calls FastAPI. The API records document state and jobs, while a separate worker claims jobs, reads quarantine content, runs scanner/OCR/model adapters, and records extraction, review, audit, and clean promotion. The cloud diagram separates the browser/CloudFront/Cognito/API path from the data plane: S3 `ObjectCreated` enqueues SQS, GuardDuty tags quarantine content asynchronously, and the worker gates promotion on that tag.
+Suppose a reviewer uploads an invoice whose total is written as `125.40`. The browser calculates a SHA-256 digest—a repeatable digital fingerprint—and declares the filename, type, and byte count. The API accepts only content that matches that declaration.
 
-The diagrams are design and system-boundary evidence. They do not assert that AWS resources exist.
+A background worker then claims the processing job. It reads the quarantined content through restricted adapters, checks the scan result, and extracts the invoice fields. The review screen displays `125.40`, its confidence score, and the source passage that supports it. If confidence is below 80%, or the document contains text that looks like an instruction aimed at the automation, the result becomes `NEEDS_REVIEW` instead of being automatically accepted.
 
-## Run locally
+The reviewer can correct the value and approve it. Both the original extraction and the human decision remain visible in the audit history. A later deletion request removes the stored object and related tenant-scoped records.
 
-With Docker:
+## Security choices and trust boundaries
+
+An uploaded file and its text are treated as hostile input, not instructions for the system.
+
+- Content first enters quarantine, which is isolated from approved documents.
+- Filename, media type, size, and digital fingerprint must agree with the upload declaration.
+- A malware result must be available before cloud processing promotes content as clean.
+- Text that resembles instructions to an AI triggers human review.
+- The extraction model cannot approve, delete, execute commands, or call tools.
+- Every read or change is scoped to the caller's organization.
+- Low-confidence values require a person's decision, and corrections become audit events.
+
+Local fixture mode demonstrates these control decisions, but it is not a substitute for a production malware scanner or identity system.
+
+## System architecture: how a document moves
+
+![Secure Document Intelligence system architecture showing upload, quarantine, processing, review, audit, and deletion](docs/diagrams/system-architecture.svg)
+
+In plain language:
+
+1. The review website declares an upload to the FastAPI application programming interface (API).
+2. The API verifies the upload contract, records document state, and creates background work.
+3. A separate worker claims the job and reads the quarantined content.
+4. Scanner, text-recognition, and extraction adapters examine the document behind explicit boundaries.
+5. The worker stores fields, confidence, citations, status, and audit events.
+6. The reviewer reads the result through the API and makes the final correction, approval, rejection, or deletion decision.
+
+The same application contract supports lightweight local components and the AWS design; adapters isolate the differences between them.
+
+## Technology guide in plain English
+
+| Technology | Its job in this project |
+| --- | --- |
+| React | Builds the review screens used in a web browser. |
+| FastAPI | Runs the API that validates requests and applies document rules. |
+| Worker | Processes jobs separately so an upload does not have to wait for extraction to finish. |
+| Docker Compose | Starts the local website, API, worker, storage, queue, and optional adapters together. |
+| DynamoDB Local | Mimics the project's cloud record store on the operator's computer. |
+| MinIO | Provides local object storage for quarantined and clean document files. |
+| ClamAV | Provides the optional local malware-scanning adapter. |
+| Tesseract | Provides the optional local optical character recognition (OCR) adapter that turns an image into text. |
+| Ollama | Can run the optional local language-model adapter. Deterministic fixtures are the default. |
+| Terraform | Describes the proposed AWS environment as reviewable code. |
+| GitHub Actions | Repeats tests, builds, security scans, and the protected AWS delivery gates. |
+
+## AWS cloud resources architecture
+
+The cloud design replaces the local identity, storage, queue, and extraction adapters with managed AWS services while keeping the same quarantine-and-review flow.
+
+![Secure Document Intelligence AWS architecture with official service icons and separate browser, identity, API, quarantine, processing, review, and monitoring paths](docs/diagrams/cloud-architecture.svg)
+
+The diagram uses the [official AWS Architecture Icons](https://aws.amazon.com/architecture/icons/); the preserved source icons and release provenance are recorded in [the diagram asset notes](docs/diagrams/assets/README.md).
+
+In this design, Amazon CloudFront serves the private website and routes API requests. Amazon Cognito proves the user's identity, and API Gateway passes authorized requests to AWS Lambda. An upload goes directly into an Amazon S3 quarantine bucket. The new object creates an Amazon Simple Queue Service (SQS) job, while GuardDuty Malware Protection scans and tags it independently. The worker waits for that result, uses Amazon Textract for document text and optional Amazon Bedrock extraction, then stores records in DynamoDB and promotes accepted content to clean storage. AWS Key Management Service (KMS) protects document data, and CloudWatch receives operational logs and signals.
+
+### Deployment status
+
+The planned resources shown here have not been deployed to an AWS account. To use the cloud path, an operator deploys an independent environment through the protected GitHub Actions workflow described below. Local and continuous-integration results validate the application and infrastructure definitions; they are not evidence of a live AWS deployment.
+
+## What was tested
+
+Recorded local evidence covers:
+
+- API behavior, persistence, retries, and dead-letter handling.
+- The complete browser upload, quarantine, worker, extraction, audit, review, and deletion journey.
+- Malware-fixture and suspicious-instruction routing.
+- Frontend type checking, contract tests, and a production build.
+- Lambda and Terraform contract tests.
+- Terraform formatting and configuration validation without contacting an AWS account.
+- Docker Compose configuration and an integrated local run using durable DynamoDB Local and MinIO storage.
+- Repository secret and vulnerability scanning in continuous integration.
+
+The [evidence matrix](docs/evidence-matrix.md) maps each claim to its check and clearly separates local evidence from checks that still require an AWS deployment.
+
+## Important limitations
+
+- No AWS environment has been deployed or smoke-tested for this repository, so account permissions, quotas, service integration, CloudFront propagation, and cloud cleanup remain unverified.
+- Deterministic local extraction proves workflow behavior, not the accuracy of a production document model.
+- Local fixture scanning is not malware assurance; use the real scanner adapter or the designed cloud control for security testing.
+- Amazon Textract and Bedrock are disabled by default and would introduce usage charges when enabled.
+- The current design needs account-specific decisions for budgets, alerting, private networking, recovery, and retention before production use.
+- Human approval reduces automation risk but does not prove that a reviewer's decision is correct.
+- The included interface and controls are a bounded document workflow, not a complete enterprise records-management platform.
+
+## Running the project locally
+
+This section is for someone operating the project. A non-technical reader can stop here without missing the product story.
+
+### Before you begin
+
+The simplest path requires Docker with Docker Compose. The services default to ports `5173` for the website and `8000` for the API.
+
+### 1. Start the application
+
+From the repository folder:
 
 ```sh
 docker compose up --build
-# API docs: http://localhost:8000/docs
-# Review UI: http://localhost:5173
 ```
 
-The local UI displays `LOCAL · AUTH DISABLED` only on localhost and uses deterministic fixture adapters by default. For local scanner/OCR adapters, use `ADAPTER_MODE=real docker compose --profile scanners up --build`; for Ollama, use `MODEL_ADAPTER=ollama docker compose --profile ai up --build`.
+Open `http://localhost:5173`. API documentation is available at `http://localhost:8000/docs`.
 
-Without Docker:
+The visible `LOCAL · AUTH DISABLED` label is intentional: local mode uses a fixed demonstration tenant and deterministic fixture adapters rather than pretending cloud authentication is active.
+
+![Local review interface showing upload controls, extracted fields, confidence, citations, and audit history](docs/assets/local-ui.png)
+
+### 2. Try the representative workflow
+
+Upload a text invoice, inspect its cited fields and audit events, correct an uncertain result, and approve or reject it. Then delete it and confirm that its records are no longer available. The safe EICAR antivirus test fixture or an instruction-like sentence can be used to explore the review gates.
+
+To use local scanner and OCR processes instead of fixtures:
 
 ```sh
-cd api && python -m venv .venv && . .venv/bin/activate
+ADAPTER_MODE=real docker compose --profile scanners up --build
+```
+
+To include the optional Ollama model adapter:
+
+```sh
+MODEL_ADAPTER=ollama docker compose --profile ai up --build
+```
+
+### 3. Stop the local environment
+
+Press `Ctrl+C`, then run:
+
+```sh
+docker compose down
+```
+
+Named volumes preserve local demonstration data. Removing those volumes with `docker compose down --volumes` permanently deletes that data.
+
+## Checking the project
+
+Python 3.12 or 3.13, Node.js 20, Terraform, and Docker are used by the full check set:
+
+```sh
+cd api
+python -m venv .venv
+. .venv/bin/activate
 pip install -r requirements.txt
-uvicorn app.main:app --reload
-```
+pytest -q
 
-Open the UI, upload a text invoice, inspect cited fields and the audit trail, try the EICAR fixture or an instruction-like sentence, correct/approve uncertain output, and confirm deletion.
+cd ../frontend
+npm ci
+npm test
+npm run build
+npm run test:e2e
 
-![Local mode review UI](docs/assets/local-ui.png)
-
-*Browser-captured local mode (`LOCAL · AUTH DISABLED`) using the deterministic fixture adapters.*
-
-## API surface
-
-| Method | Route | Purpose |
-| --- | --- | --- |
-| POST | `/v1/uploads` | Create a 15-minute bounded upload descriptor |
-| PUT | `/v1/documents/{id}/content` | Verify and store local content |
-| POST | `/v1/documents/{id}/process` | Enqueue processing |
-| GET | `/v1/documents/{id}` | Read tenant-scoped status and metadata |
-| GET | `/v1/documents/{id}/extractions` | Read cited fields and confidence |
-| POST | `/v1/documents/{id}/reviews` | Correct, approve, or reject |
-| GET | `/v1/documents/{id}/audit-events` | Read tenant-scoped audit history |
-| DELETE | `/v1/documents/{id}` | Delete object content and related records |
-
-## Verification and evidence
-
-Run the checks from the repository root or the indicated directory:
-
-```sh
-cd api && pytest -q
-cd ../frontend && npm ci && npm test && npm run build && npm run test:e2e
-cd ../.. && terraform -chdir=infra/aws fmt -check
+cd ..
+terraform -chdir=infra/aws fmt -check
 terraform -chdir=infra/aws init -backend=false -input=false
 terraform -chdir=infra/aws validate
+python -m pytest -q infra/aws/lambda/test_handler_contract.py infra/aws/test_terraform_contract.py
 docker compose config --quiet
 ```
 
-CI exposes six gates: API tests, frontend test/build, Terraform validation, Lambda contract tests, Terraform contract tests, and security scanning with Gitleaks plus a repository-root Trivy filesystem scan. The [evidence matrix](docs/evidence-matrix.md) maps claims to local checks and separately identifies evidence still required after an approved AWS deployment.
+## How to deploy using the protected AWS workflow
 
-## Exact deployment method: gated AWS delivery
+AWS delivery is intentionally manual and protected. It uses GitHub's identity connection to AWS rather than stored AWS access keys.
 
-AWS delivery is manual and protected. Read [`docs/runbooks/deploy.md`](docs/runbooks/deploy.md), review the Terraform plan and [cost model](docs/cost-model.md), and dispatch exactly one typed action: `PLAN`, `APPLY`, `SMOKE`, or `DESTROY`. The workflow requires the protected GitHub environment and OIDC role; it does not accept static cloud credentials. Outputs include the CloudFront URL and deployment identifiers needed by the next gate. A release is not cloud-verified until smoke and destroy verification have completed with sanitized evidence.
+Before deploying, an operator must provide an approved AWS account and region, a budget and incident owner, encrypted remote Terraform state, a protected GitHub environment, and a narrowly trusted AWS role. Review the [deployment runbook](docs/runbooks/deploy.md), [security checklist](SECURITY.md), [threat model](docs/threat-model.md), and [cost model](docs/cost-model.md).
 
-## Security, limitations, and pre-deployment blockers
+From the repository's **Actions → AWS on demand** page, dispatch these typed gates in order:
 
-Files and extracted text are hostile data. The service checks filename traversal, MIME, size, tenant, declared digest, observed digest, malware status, and instruction-like content before clean promotion. Local fixture mode is not malware assurance, and Textract/Bedrock are disabled by default.
+1. `PLAN` previews the exact infrastructure and cost-sensitive changes.
+2. `APPLY` creates the resources, configures the sign-in callback, builds the website, and publishes it behind CloudFront.
+3. `SMOKE` uses a short-lived fictional-user token to verify upload, processing, citations, review, audit, and deletion.
+4. `DESTROY` removes the temporary environment; the operator then checks for intentionally retained or leftover resources.
 
-Before an AWS apply, review the [security checklist](SECURITY.md), threat model, and runbook. Account-level validation is still required for identity-provider setup, quotas, cost, CloudFront propagation, service limits, private networking, alerting, and recovery. No cloud resource, account, credential, smoke test, or apply is claimed by this repository state.
+If an apply fails, preserve its logs and run a corrected `PLAN`; do not manually edit Terraform state. The S3 `force_destroy` option can permanently delete documents and should be enabled only for an explicitly approved temporary environment. Exact variables, outputs, verification, rollback, and cleanup procedures are in the [gated deployment runbook](docs/runbooks/deploy.md).
 
-AWS Architecture Icons are used as the visual language and attributed to the [official AWS Architecture Icons resource](https://aws.amazon.com/architecture/icons/). The diagrams contain only resources represented in Terraform; neither Step Functions nor EventBridge is implied.
+## Repository map
 
-Read [development](docs/development.md), [threat model](docs/threat-model.md), [AI risk mapping](docs/ai-risk-mapping.md), [runbooks](docs/runbooks/), and [ADRs](docs/decisions/).
+| Location | Contents |
+| --- | --- |
+| `frontend` | Browser review interface, upload contract, tests, and build configuration. |
+| `api/app` | API rules, local and cloud adapters, background worker, and storage boundaries. |
+| `api/tests` | Automated API and workflow behavior checks. |
+| `infra/aws` | Terraform resources plus AWS Lambda API and worker handlers. |
+| `docs/diagrams` | System and AWS diagrams with official-icon source assets. |
+| `docs/evidence-matrix.md` | Claim-by-claim verification record and remaining cloud evidence. |
+| `docs/threat-model.md` | Trust boundaries, risks, and mitigations. |
+| `docs/runbooks` | Deployment and incident procedures. |
+| `.github/workflows` | Continuous-integration checks and protected AWS actions. |
+
+More detail is available in [development guidance](docs/development.md), the [AI risk mapping](docs/ai-risk-mapping.md), [architecture decisions](docs/decisions/), and [contribution guide](CONTRIBUTING.md).
+
+Licensed under the MIT License.
